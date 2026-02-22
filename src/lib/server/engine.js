@@ -3,6 +3,7 @@ import { callLLM } from './providers/index.js';
 import { notify } from './notify.js';
 import { PUBLIC_OWNER_NAME, PUBLIC_APP_URL } from '$env/static/public';
 import { getEventTypes, getSchedulingRules } from './calendar.js';
+import { getOrCreateTrust, addTrustPoints, getTier, validateReferral, useReferral } from './trust.js';
 
 // ---------------------------------------------------------------------------
 // Data loaders
@@ -44,7 +45,7 @@ export async function getConversation(conversationId) {
 // System prompt builder
 // ---------------------------------------------------------------------------
 
-function buildSystemPrompt(knowledge, templates, scheduling = null) {
+function buildSystemPrompt(knowledge, templates, scheduling = null, trustTier = null) {
 	const sections = {};
 	for (const k of knowledge) {
 		if (!sections[k.category]) sections[k.category] = [];
@@ -83,6 +84,17 @@ A person DOES NOT qualify if:
 - If they qualify after explaining → include a booking link in your response
 - If they don't qualify → politely decline and suggest async alternatives (email, the chat itself)
 - Known contacts with relationship "close" or "professional" → always qualify
+
+## Trust-based qualification approach:
+${trustTier ? `This sender has trust tier: ${trustTier}` : 'This is a new contact (no trust tier yet)'}
+- "new" tier (0-10 points) → strict qualification, ask probing questions, be thorough
+- "known" tier (11-30 points) → moderate qualification, give benefit of the doubt
+- "trusted"/"vip" tier (31+ points) → auto-qualify, share booking links freely
+${trustTier === 'new' ? 'Be extra thorough with this new contact. Ask specific questions about their needs.' : ''}
+${trustTier === 'known' ? 'This person has some history with you. Be moderately trusting but still verify their request.' : ''}
+${trustTier === 'trusted' || trustTier === 'vip' ? 'This person has proven themselves trustworthy. Feel free to be generous with booking links.' : ''}
+
+For borderline qualification cases, or when someone seems genuine but you can't fully evaluate via text, suggest they record a 60-second video pitch at ${PUBLIC_APP_URL}/pitch. This shows commitment and helps ${PUBLIC_OWNER_NAME} evaluate.
 
 ## Classification:
 - "auto" — factual questions, standard declines, and QUALIFIED booking responses
@@ -146,7 +158,7 @@ The "qualified" field indicates if this person has earned access to ${owner}'s c
 // Main query processor
 // ---------------------------------------------------------------------------
 
-export async function processQuery({ query, channel, senderName, senderId, metadata = {}, conversationId = null }) {
+export async function processQuery({ query, channel, senderName, senderId, metadata = {}, conversationId = null, referralToken = null }) {
 	const [knowledge, templates, contact, conversation, eventTypes, schedulingRules] = await Promise.all([
 		getKnowledge(),
 		getTemplates(),
@@ -155,6 +167,29 @@ export async function processQuery({ query, channel, senderName, senderId, metad
 		getEventTypes(),
 		getSchedulingRules(),
 	]);
+
+	// Handle trust scores and referrals
+	let trust = await getOrCreateTrust(senderId, senderName, senderId || senderName);
+	let referralData = null;
+	let wasReferred = false;
+
+	// Handle referral token if provided
+	if (referralToken && trust) {
+		const referralResult = await useReferral(referralToken, senderName, senderId);
+		if (referralResult.success) {
+			wasReferred = true;
+			referralData = referralResult.referral_data;
+			// Add referral bonus points and set referred_by
+			trust = await addTrustPoints(trust.id, 25, 'referral');
+			// Update the referred_by field
+			if (referralData.referrer_contact_id) {
+				await supabase
+					.from('trust_scores')
+					.update({ referred_by: referralData.referrer_contact_id })
+					.eq('id', trust.id);
+			}
+		}
+	}
 
 	// Known close contact → always escalate + auto-qualify
 	if (contact?.always_escalate) {
@@ -177,7 +212,7 @@ export async function processQuery({ query, channel, senderName, senderId, metad
 	const autoQualify = contact && ['close', 'professional'].includes(contact.relationship);
 
 	const scheduling = { eventTypes, rules: schedulingRules };
-	const systemPrompt = buildSystemPrompt(knowledge, templates, scheduling);
+	const systemPrompt = buildSystemPrompt(knowledge, templates, scheduling, trust?.tier);
 
 	// Build messages array for conversation context
 	let messages = [];
@@ -192,6 +227,8 @@ export async function processQuery({ query, channel, senderName, senderId, metad
 	let userMessage = `Channel: ${channel}
 Sender: ${senderName || 'Unknown'}`;
 	if (contact) userMessage += ` (Known contact: ${contact.relationship})`;
+	if (trust) userMessage += ` (Trust tier: ${trust.tier}, score: ${trust.score})`;
+	if (wasReferred) userMessage += ` [REFERRED by ${referralData.referrer_name}${referralData.note ? ': ' + referralData.note : ''}]`;
 	if (previouslyQualified || autoQualify) userMessage += ` [PREVIOUSLY QUALIFIED — booking links can be shared]`;
 	userMessage += `\nMessage: ${query}`;
 
@@ -209,7 +246,23 @@ Sender: ${senderName || 'Unknown'}`;
 	}
 
 	// Override qualification for known contacts
-	if (autoQualify) result.qualified = true;
+	if (autoQualify || wasReferred) result.qualified = true;
+
+	// Update trust scores based on interaction and qualification
+	if (trust) {
+		// Award interaction points (capped at 1 per hour)
+		await addTrustPoints(trust.id, 1, 'interaction');
+		
+		// Award qualification points if this is newly qualified and not previously qualified in conversation
+		if (result.qualified && !previouslyQualified) {
+			const alreadyQualifiedThisConversation = conversation?.messages?.some(m =>
+				m.role === 'assistant' && m.qualified === true
+			);
+			if (!alreadyQualifiedThisConversation) {
+				await addTrustPoints(trust.id, 5, 'qualified');
+			}
+		}
+	}
 
 	const status = result.classification === 'auto' ? 'sent' :
 		result.classification === 'draft' ? 'pending' : 'escalated';
@@ -239,6 +292,11 @@ Sender: ${senderName || 'Unknown'}`;
 		...result,
 		interactionId: interaction.id,
 		conversation_id: finalConversationId,
+		trust: trust ? {
+			score: trust.score,
+			tier: trust.tier,
+			total_interactions: trust.total_interactions
+		} : null,
 	};
 }
 

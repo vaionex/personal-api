@@ -62,6 +62,7 @@
 		<div id="papi-widget-header">
 			<h3>${esc(NAME)}</h3>
 			<p>Tell me what you need — I'll qualify you for a meeting</p>
+			<div id="papi-widget-stats" style="display: none; font-size: 11px; color: ${textMuted}; margin-top: 4px;"></div>
 		</div>
 		<div id="papi-widget-qualified"><a href="${API}/schedule" target="_blank">✓ You're qualified — book a meeting →</a></div>
 		<div id="papi-widget-messages"></div>
@@ -76,7 +77,14 @@
 	let conversationId = null;
 	let isQualified = false;
 
-	btn.onclick = () => { open = !open; panel.classList.toggle('open', open); if (open) document.getElementById('papi-input').focus(); };
+	btn.onclick = () => { 
+		open = !open; 
+		panel.classList.toggle('open', open); 
+		if (open) {
+			document.getElementById('papi-input').focus();
+			loadStats();
+		}
+	};
 
 	const msgArea = panel.querySelector('#papi-widget-messages');
 	const input = panel.querySelector('#papi-input');
@@ -122,6 +130,20 @@
 
 	sendBtn.onclick = send;
 	input.onkeydown = (e) => { if (e.key === 'Enter') send(); };
+
+	async function loadStats() {
+		try {
+			const res = await fetch(API + '/api/proof?stats=true');
+			const stats = await res.json();
+			const statsDiv = panel.querySelector('#papi-widget-stats');
+			if (stats.totalQualified > 0) {
+				statsDiv.innerHTML = `${stats.totalQualified} people qualified this week`;
+				statsDiv.style.display = 'block';
+			}
+		} catch(e) {
+			// Silently fail if stats can't be loaded
+		}
+	}
 
 	function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 })();

@@ -1,6 +1,8 @@
 import { json } from '@sveltejs/kit';
 import { bookSlot } from '$lib/server/calendar.js';
 import { notify } from '$lib/server/notify.js';
+import { generateDossier } from '$lib/server/dossier.js';
+import { createProofEvent } from '$lib/server/proof.js';
 import { PUBLIC_OWNER_NAME, PUBLIC_APP_URL } from '$env/static/public';
 
 export async function POST({ request }) {
@@ -37,6 +39,37 @@ export async function POST({ request }) {
 		message: `${name} (${email}) booked "${result.event.name}" on ${start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} at ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}${notes ? `\nNotes: ${notes}` : ''}`,
 		url: `${appUrl}/admin/bookings`,
 	});
+
+	// Create proof event for booking
+	await createProofEvent({
+		eventType: 'booked',
+		senderName: name,
+		meetingType: result.event.name
+	});
+
+	// Generate prep dossier
+	try {
+		const dossier = await generateDossier(result.booking.id);
+		
+		// Notify owner with dossier summary
+		if (dossier) {
+			await notify({
+				type: 'dossier',
+				title: `📋 Meeting Prep: ${result.event.name} with ${name}`,
+				message: `📅 ${start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} at ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+
+Summary: ${dossier.conversation_summary || 'No prior conversation'}
+They want: ${dossier.their_ask || 'Not specified'}
+${dossier.talking_points && dossier.talking_points.length > 0 ? `Key points: ${dossier.talking_points.join(', ')}` : ''}
+
+Full dossier: ${appUrl}/admin/dossiers`,
+				url: `${appUrl}/admin/dossiers`,
+			});
+		}
+	} catch (error) {
+		console.error('Failed to generate dossier:', error);
+		// Don't fail the booking if dossier generation fails
+	}
 
 	return json({
 		message: result.message,

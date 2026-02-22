@@ -70,6 +70,24 @@
 		await load();
 	}
 
+	async function completeBooking(id) {
+		await fetch('/api/admin/bookings', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ action: 'complete_booking', id }),
+		});
+		await load();
+	}
+
+	async function markNoShow(id) {
+		await fetch('/api/admin/bookings', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ action: 'no_show', id }),
+		});
+		await load();
+	}
+
 	$effect(() => { load(); });
 
 	function timeAgo(ts) {
@@ -131,7 +149,13 @@
 								<p class="text-xs text-gray-400 mt-1 italic">"{b.guest_notes}"</p>
 							{/if}
 						</div>
-						<button onclick={() => cancelBooking(b.id)} class="text-xs text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity">Cancel</button>
+						<div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+							{#if b.status === 'confirmed'}
+								<button onclick={() => completeBooking(b.id)} class="text-xs text-green-600 hover:text-green-700">Complete</button>
+								<button onclick={() => markNoShow(b.id)} class="text-xs text-orange-600 hover:text-orange-700">No-show</button>
+							{/if}
+							<button onclick={() => cancelBooking(b.id)} class="text-xs text-red-500 hover:text-red-700">Cancel</button>
+						</div>
 					</div>
 				{/each}
 				{#if bookings.filter(b => b.status !== 'cancelled').length === 0}

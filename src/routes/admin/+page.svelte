@@ -167,7 +167,7 @@
 
 		<!-- Tabs -->
 		<div class="flex gap-1 mb-6 bg-white rounded-lg border border-gray-200 p-1 w-fit">
-			{#each ['knowledge', 'templates', 'interactions', 'contacts', 'settings'] as tab}
+			{#each ['knowledge', 'templates', 'interactions', 'contacts', 'trust', 'referrals', 'pitches', 'settings'] as tab}
 				<button
 					onclick={() => activeTab = tab}
 					class="px-4 py-2 text-sm font-medium rounded-md transition-colors {activeTab === tab ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-700'}"
@@ -331,6 +331,48 @@
 						class="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors"
 					>
 						Go to Contacts
+					</a>
+				</div>
+			</div>
+
+		{:else if activeTab === 'trust'}
+			<div class="bg-white rounded-xl border border-gray-200 p-6">
+				<div class="text-center">
+					<h3 class="text-lg font-semibold text-gray-900 mb-2">Trust Score Dashboard</h3>
+					<p class="text-gray-600 mb-4">View and manage sender trust scores and reputation tiers.</p>
+					<a 
+						href="/admin/trust" 
+						class="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+					>
+						Go to Trust Dashboard
+					</a>
+				</div>
+			</div>
+
+		{:else if activeTab === 'referrals'}
+			<div class="bg-white rounded-xl border border-gray-200 p-6">
+				<div class="text-center">
+					<h3 class="text-lg font-semibold text-gray-900 mb-2">Referral System</h3>
+					<p class="text-gray-600 mb-4">Create and manage referral tokens for vouching contacts.</p>
+					<a 
+						href="/admin/referrals" 
+						class="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+					>
+						Go to Referrals
+					</a>
+				</div>
+			</div>
+
+		{:else if activeTab === 'pitches'}
+			<div class="bg-white rounded-xl border border-gray-200 p-6">
+				<div class="text-center">
+					<h3 class="text-lg font-semibold text-gray-900 mb-2">Video Pitches</h3>
+					<p class="text-gray-600 mb-4">Review and approve async video pitches from potential contacts.</p>
+					<a 
+						href="/admin/pitches" 
+						class="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+					>
+						Go to Pitches
 					</a>
 				</div>
 			</div>

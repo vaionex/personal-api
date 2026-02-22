@@ -51,3 +51,10 @@ INSERT INTO scheduling_rules (day_of_week, start_time, end_time, available) VALU
 INSERT INTO templates (trigger_pattern, response_template, auto_send) VALUES
 ('recruiter_outreach', 'Thanks for reaching out! I''m not looking for employment at the moment. Best of luck with the search!', true),
 ('vague_collaboration', 'I appreciate the interest! If you have something specific in mind, feel free to share details and I''ll take a look.', true);
+
+-- Topic routing rules
+INSERT INTO topic_routes (topic, description, event_type_slug, auto_qualify, keywords, response_hint) VALUES
+('technical', 'Technical consulting and architecture', 'consultation', false, '["technical", "architecture", "code", "engineering", "API", "integration", "bug"]', 'Route to a technical consultation. Ask about their tech stack and specific problem.'),
+('partnership', 'Business partnerships and collaborations', 'deep-dive', false, '["partner", "partnership", "collaborate", "integration", "joint", "together"]', 'Route to a deep-dive session. Understand the mutual value proposition.'),
+('investment', 'Investment and funding discussions', 'deep-dive', true, '["invest", "funding", "raise", "capital", "angel", "VC", "valuation"]', 'Auto-qualify for investment discussions. Route to deep-dive.'),
+('media', 'Press, podcasts, and speaking', 'quick-chat', false, '["press", "interview", "podcast", "speak", "conference", "media", "article"]', 'Route to a quick chat. Ask about the publication/event and audience.');

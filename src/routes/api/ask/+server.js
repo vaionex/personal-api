@@ -27,7 +27,7 @@ export async function POST({ request, getClientAddress }) {
 		}
 	}
 
-	const { query, name, channel = 'widget', metadata = {}, conversation_id } = await request.json();
+	const { query, name, channel = 'widget', metadata = {}, conversation_id, referral_token } = await request.json();
 	const owner = PUBLIC_OWNER_NAME || 'Owner';
 
 	if (!query || typeof query !== 'string' || query.trim().length === 0) {
@@ -45,6 +45,7 @@ export async function POST({ request, getClientAddress }) {
 		senderId: null,
 		metadata,
 		conversationId: conversation_id || null,
+		referralToken: referral_token || null,
 	});
 
 	// Notify owner for drafts and escalations
@@ -71,6 +72,7 @@ export async function POST({ request, getClientAddress }) {
 			type: 'auto',
 			qualified: result.qualified || false,
 			conversation_id: result.conversation_id,
+			trust: result.trust || null,
 		});
 	}
 
@@ -81,6 +83,7 @@ export async function POST({ request, getClientAddress }) {
 		type: result.classification,
 		qualified: result.qualified || false,
 		conversation_id: result.conversation_id,
+		trust: result.trust || null,
 	});
 }
 

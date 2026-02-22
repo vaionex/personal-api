@@ -7,6 +7,7 @@ import {
 	GOOGLE_CALENDAR_ID,
 } from '$env/static/private';
 import { PUBLIC_APP_URL, PUBLIC_OWNER_NAME } from '$env/static/public';
+import { addTrustPoints, getOrCreateTrust } from './trust.js';
 
 // ---------------------------------------------------------------------------
 // Google Calendar OAuth2 client
@@ -228,6 +229,12 @@ export async function bookSlot({ eventTypeSlug, startTime, name, email, notes, t
 
 	if (error) return { error: error.message };
 
+	// Award trust points for booking
+	const trust = await getOrCreateTrust(email, name, email);
+	if (trust) {
+		await addTrustPoints(trust.id, 10, 'meeting_booked');
+	}
+
 	return {
 		booking: data,
 		event: eventType,
@@ -269,6 +276,64 @@ export async function cancelBooking(bookingId) {
 		.eq('id', bookingId);
 
 	return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Complete a booking (award trust points)
+// ---------------------------------------------------------------------------
+export async function completeBooking(bookingId) {
+	const { data: booking } = await supabase
+		.from('bookings')
+		.select('*')
+		.eq('id', bookingId)
+		.single();
+
+	if (!booking) return { error: 'Booking not found' };
+
+	// Update booking status
+	const { error } = await supabase
+		.from('bookings')
+		.update({ status: 'completed' })
+		.eq('id', bookingId);
+
+	if (error) return { error: error.message };
+
+	// Award trust points
+	const trust = await getOrCreateTrust(booking.guest_email, booking.guest_name, booking.guest_email);
+	if (trust) {
+		await addTrustPoints(trust.id, 15, 'meeting_completed');
+	}
+
+	return { success: true, booking };
+}
+
+// ---------------------------------------------------------------------------
+// Mark a booking as no-show (deduct trust points)
+// ---------------------------------------------------------------------------
+export async function markNoShow(bookingId) {
+	const { data: booking } = await supabase
+		.from('bookings')
+		.select('*')
+		.eq('id', bookingId)
+		.single();
+
+	if (!booking) return { error: 'Booking not found' };
+
+	// Update booking status
+	const { error } = await supabase
+		.from('bookings')
+		.update({ status: 'no_show' })
+		.eq('id', bookingId);
+
+	if (error) return { error: error.message };
+
+	// Deduct trust points
+	const trust = await getOrCreateTrust(booking.guest_email, booking.guest_name, booking.guest_email);
+	if (trust) {
+		await addTrustPoints(trust.id, -20, 'no_show');
+	}
+
+	return { success: true, booking };
 }
 
 // ---------------------------------------------------------------------------

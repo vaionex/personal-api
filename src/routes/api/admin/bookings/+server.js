@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { supabase } from '$lib/server/supabase.js';
-import { cancelBooking } from '$lib/server/calendar.js';
+import { cancelBooking, completeBooking, markNoShow } from '$lib/server/calendar.js';
 
 export async function GET() {
 	const [{ data: bookings }, { data: eventTypes }, { data: rules }] = await Promise.all([
@@ -51,6 +51,18 @@ export async function POST({ request }) {
 
 		case 'cancel_booking': {
 			const result = await cancelBooking(body.id);
+			if (result.error) return json({ error: result.error }, { status: 500 });
+			return json({ ok: true });
+		}
+
+		case 'complete_booking': {
+			const result = await completeBooking(body.id);
+			if (result.error) return json({ error: result.error }, { status: 500 });
+			return json({ ok: true });
+		}
+
+		case 'no_show': {
+			const result = await markNoShow(body.id);
 			if (result.error) return json({ error: result.error }, { status: 500 });
 			return json({ ok: true });
 		}
