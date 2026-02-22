@@ -8,6 +8,7 @@
 	let newTemplate = $state({ trigger_pattern: '', response_template: '', auto_send: false });
 	let loading = $state(true);
 	let stats = $state({ total: 0, auto: 0, pending: 0 });
+	let fileInput = $state(null);
 
 	async function load() {
 		loading = true;
@@ -50,6 +51,60 @@
 	async function deleteTemplate(id) {
 		await fetch(`/api/admin/templates?id=${id}`, { method: 'DELETE' });
 		await load();
+	}
+
+	async function exportKnowledge() {
+		const res = await fetch('/api/admin/knowledge?format=json');
+		const data = await res.json();
+		
+		const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `knowledge-export-${new Date().toISOString().split('T')[0]}.json`;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+	}
+
+	async function importKnowledge() {
+		fileInput?.click();
+	}
+
+	async function handleFileImport(event) {
+		const file = event.target.files?.[0];
+		if (!file) return;
+
+		try {
+			const text = await file.text();
+			const data = JSON.parse(text);
+			
+			if (!Array.isArray(data)) {
+				alert('Invalid file format. Expected JSON array of knowledge items.');
+				return;
+			}
+
+			const res = await fetch('/api/admin/knowledge', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(data),
+			});
+
+			const result = await res.json();
+			
+			if (res.ok) {
+				alert(`Successfully imported ${result.imported} knowledge items.`);
+				await load();
+			} else {
+				alert(`Import failed: ${result.error}`);
+			}
+		} catch (e) {
+			alert(`Import failed: ${e.message}`);
+		}
+		
+		// Reset file input
+		event.target.value = '';
 	}
 
 	async function updateInteraction(id, status) {
@@ -112,7 +167,7 @@
 
 		<!-- Tabs -->
 		<div class="flex gap-1 mb-6 bg-white rounded-lg border border-gray-200 p-1 w-fit">
-			{#each ['knowledge', 'templates', 'interactions'] as tab}
+			{#each ['knowledge', 'templates', 'interactions', 'contacts', 'settings'] as tab}
 				<button
 					onclick={() => activeTab = tab}
 					class="px-4 py-2 text-sm font-medium rounded-md transition-colors {activeTab === tab ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-700'}"
@@ -123,7 +178,13 @@
 		{#if activeTab === 'knowledge'}
 			<!-- Add knowledge -->
 			<div class="bg-white rounded-xl border border-gray-200 p-5 mb-4">
-				<h3 class="text-sm font-semibold text-gray-900 mb-3">Add knowledge</h3>
+				<div class="flex items-center justify-between mb-3">
+					<h3 class="text-sm font-semibold text-gray-900">Add knowledge</h3>
+					<div class="flex gap-2">
+						<button onclick={exportKnowledge} class="text-xs bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700">Export</button>
+						<button onclick={importKnowledge} class="text-xs bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700">Import</button>
+					</div>
+				</div>
 				<div class="grid grid-cols-[140px_1fr_1fr_100px] gap-3">
 					<select bind:value={newItem.category} class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
 						{#each categories as cat}
@@ -135,6 +196,13 @@
 					<button onclick={addKnowledge} class="bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors">Add</button>
 				</div>
 				<input bind:value={newItem.context} placeholder="Context (optional — extra info for the AI)" class="mt-2 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+				<input 
+					bind:this={fileInput}
+					type="file" 
+					accept=".json" 
+					onchange={handleFileImport}
+					style="display: none;" 
+				/>
 			</div>
 
 			<!-- Knowledge list -->
@@ -251,6 +319,34 @@
 						<p class="text-gray-400 text-xs">Once people start talking to your surrogate, interactions will appear here.</p>
 					</div>
 				{/if}
+			</div>
+
+		{:else if activeTab === 'contacts'}
+			<div class="bg-white rounded-xl border border-gray-200 p-6">
+				<div class="text-center">
+					<h3 class="text-lg font-semibold text-gray-900 mb-2">Manage Contacts</h3>
+					<p class="text-gray-600 mb-4">Full contact management is available on the dedicated contacts page.</p>
+					<a 
+						href="/admin/contacts" 
+						class="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+					>
+						Go to Contacts
+					</a>
+				</div>
+			</div>
+
+		{:else if activeTab === 'settings'}
+			<div class="bg-white rounded-xl border border-gray-200 p-6">
+				<div class="text-center">
+					<h3 class="text-lg font-semibold text-gray-900 mb-2">System Settings</h3>
+					<p class="text-gray-600 mb-4">View configuration and test the system on the dedicated settings page.</p>
+					<a 
+						href="/admin/settings" 
+						class="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+					>
+						Go to Settings
+					</a>
+				</div>
 			</div>
 		{/if}
 	</div>

@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js';
-import { ANTHROPIC_API_KEY } from '$env/static/private';
+import { callLLM } from './providers/index.js';
+import { notify } from './notify.js';
 import { PUBLIC_OWNER_NAME } from '$env/static/public';
 
 /**
@@ -32,6 +33,15 @@ export async function getContact(senderName, senderId) {
 	return data?.[0] || null;
 }
 
+export async function getConversation(conversationId) {
+	const { data } = await supabase
+		.from('conversations')
+		.select('*')
+		.eq('id', conversationId)
+		.single();
+	return data || null;
+}
+
 function buildSystemPrompt(knowledge, templates) {
 	const sections = {};
 	for (const k of knowledge) {
@@ -52,8 +62,8 @@ You answer questions, handle requests, and draft responses as ${owner} would.
 ## Classification:
 For each incoming message, classify it as:
 - "auto" — you can fully handle this (factual questions, standard declines, FAQ)
-- "draft" — you should draft a response for Robin to approve (partnerships, opportunities, nuanced requests)
-- "escalate" — Robin needs to see this personally (close contacts, urgent matters, things requiring judgment)
+- "draft" — you should draft a response for ${owner} to approve (partnerships, opportunities, nuanced requests)
+- "escalate" — ${owner} needs to see this personally (close contacts, urgent matters, things requiring judgment)
 
 ## ${owner}'s information:\n\n`;
 
@@ -80,11 +90,12 @@ Return a JSON object (no markdown wrapping):
 	return prompt;
 }
 
-export async function processQuery({ query, channel, senderName, senderId, metadata = {} }) {
-	const [knowledge, templates, contact] = await Promise.all([
+export async function processQuery({ query, channel, senderName, senderId, metadata = {}, conversationId = null }) {
+	const [knowledge, templates, contact, conversation] = await Promise.all([
 		getKnowledge(),
 		getTemplates(),
 		getContact(senderName, senderId),
+		conversationId ? getConversation(conversationId) : null,
 	]);
 
 	// Known close contact → always escalate
@@ -101,27 +112,33 @@ export async function processQuery({ query, channel, senderName, senderId, metad
 
 	const systemPrompt = buildSystemPrompt(knowledge, templates);
 
+	// Build messages array for conversation context
+	let messages = [];
+	
+	// Add conversation history (last 5 messages)
+	if (conversation && conversation.messages) {
+		const recentMessages = conversation.messages.slice(-5);
+		for (const msg of recentMessages) {
+			messages.push({
+				role: msg.role,
+				content: msg.content
+			});
+		}
+	}
+
+	// Add current message
 	const userMessage = `Channel: ${channel}
 Sender: ${senderName || 'Unknown'}${contact ? ` (Known contact: ${contact.relationship})` : ''}
 Message: ${query}`;
+	
+	messages.push({ role: 'user', content: userMessage });
 
-	const res = await fetch('https://api.anthropic.com/v1/messages', {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			'x-api-key': ANTHROPIC_API_KEY,
-			'anthropic-version': '2023-06-01',
-		},
-		body: JSON.stringify({
-			model: 'claude-sonnet-4-20250514',
-			max_tokens: 1024,
-			system: systemPrompt,
-			messages: [{ role: 'user', content: userMessage }],
-		}),
+	const llmResponse = await callLLM({
+		system: systemPrompt,
+		messages: messages,
 	});
-
-	const data = await res.json();
-	const text = data.content?.[0]?.text || '{}';
+	
+	const text = llmResponse.text || '{}';
 
 	let result;
 	try {
@@ -143,7 +160,17 @@ Message: ${query}`;
 		metadata: { ...metadata, reason: result.reason, confidence: result.confidence },
 	});
 
-	return { ...result, interactionId: interaction.id };
+	// Handle conversation tracking
+	const finalConversationId = await updateConversation({
+		conversationId,
+		senderId,
+		senderName,
+		channel,
+		userMessage: query,
+		assistantMessage: result.response
+	});
+
+	return { ...result, interactionId: interaction.id, conversation_id: finalConversationId };
 }
 
 async function logInteraction({ channel, senderName, senderId, query, classification, response, status, metadata }) {
@@ -158,4 +185,54 @@ async function logInteraction({ channel, senderName, senderId, query, classifica
 
 	if (error) console.error('Failed to log interaction:', error);
 	return data || { id: 'unknown' };
+}
+
+async function updateConversation({ conversationId, senderId, senderName, channel, userMessage, assistantMessage }) {
+	const now = new Date().toISOString();
+	
+	if (conversationId) {
+		// Update existing conversation
+		const { data: currentConv } = await supabase
+			.from('conversations')
+			.select('messages')
+			.eq('id', conversationId)
+			.single();
+			
+		if (currentConv) {
+			const messages = currentConv.messages || [];
+			messages.push(
+				{ role: 'user', content: userMessage, timestamp: now },
+				{ role: 'assistant', content: assistantMessage, timestamp: now }
+			);
+			
+			await supabase
+				.from('conversations')
+				.update({ 
+					messages, 
+					last_message_at: now 
+				})
+				.eq('id', conversationId);
+				
+			return conversationId;
+		}
+	}
+	
+	// Create new conversation
+	const { data, error } = await supabase
+		.from('conversations')
+		.insert({
+			sender_id: senderId,
+			sender_name: senderName,
+			channel,
+			messages: [
+				{ role: 'user', content: userMessage, timestamp: now },
+				{ role: 'assistant', content: assistantMessage, timestamp: now }
+			],
+			last_message_at: now
+		})
+		.select('id')
+		.single();
+		
+	if (error) console.error('Failed to create conversation:', error);
+	return data?.id || null;
 }

@@ -1,32 +1,140 @@
 /**
  * Personal API Embed Widget
- * Usage: <script src="https://your-domain.com/widget.js" data-api="https://your-domain.com"></script>
+ * Usage: <script src="https://your-domain.com/widget.js" data-api="https://your-domain.com" data-name="AI Assistant" data-color="#2563eb" data-position="right" data-theme="light"></script>
  */
 (function() {
 	const script = document.currentScript;
 	const API = script?.getAttribute('data-api') || '';
+	const NAME = script?.getAttribute('data-name') || 'AI Assistant';
+	const COLOR = script?.getAttribute('data-color') || '#2563eb';
+	const POSITION = script?.getAttribute('data-position') || 'right';
 	const THEME = script?.getAttribute('data-theme') || 'light';
+	
+	const isDark = THEME === 'dark';
+	const bgColor = isDark ? '#1f2937' : 'white';
+	const textColor = isDark ? '#f9fafb' : '#111827';
+	const borderColor = isDark ? '#374151' : '#f3f4f6';
+	const mutedColor = isDark ? '#9ca3af' : '#9ca3af';
+	const inputBg = isDark ? '#374151' : 'white';
+	const inputBorder = isDark ? '#4b5563' : '#e5e7eb';
+	
+	const position = POSITION === 'left' ? 'left: 24px' : 'right: 24px';
 	
 	const style = document.createElement('style');
 	style.textContent = `
-		#papi-widget-btn { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: white; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(37,99,235,0.3); z-index: 99999; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }
+		#papi-widget-btn { 
+			position: fixed; 
+			bottom: 24px; 
+			${position}; 
+			width: 56px; 
+			height: 56px; 
+			border-radius: 50%; 
+			background: ${COLOR}; 
+			color: white; 
+			border: none; 
+			cursor: pointer; 
+			box-shadow: 0 4px 12px rgba(0,0,0,0.3); 
+			z-index: 99999; 
+			display: flex; 
+			align-items: center; 
+			justify-content: center; 
+			transition: transform 0.2s; 
+		}
 		#papi-widget-btn:hover { transform: scale(1.05); }
 		#papi-widget-btn svg { width: 24px; height: 24px; }
-		#papi-widget-panel { position: fixed; bottom: 92px; right: 24px; width: 380px; max-height: 500px; background: white; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); z-index: 99999; display: none; flex-direction: column; overflow: hidden; font-family: Inter, system-ui, sans-serif; }
+		#papi-widget-panel { 
+			position: fixed; 
+			bottom: 92px; 
+			${position}; 
+			width: 380px; 
+			max-height: 500px; 
+			background: ${bgColor}; 
+			border-radius: 16px; 
+			box-shadow: 0 8px 32px rgba(0,0,0,0.12); 
+			z-index: 99999; 
+			display: none; 
+			flex-direction: column; 
+			overflow: hidden; 
+			font-family: Inter, system-ui, sans-serif;
+			${isDark ? 'border: 1px solid #374151;' : ''}
+		}
 		#papi-widget-panel.open { display: flex; }
-		#papi-widget-header { padding: 16px 20px; border-bottom: 1px solid #f3f4f6; }
-		#papi-widget-header h3 { margin: 0; font-size: 15px; font-weight: 600; color: #111827; }
-		#papi-widget-header p { margin: 4px 0 0; font-size: 12px; color: #9ca3af; }
-		#papi-widget-messages { flex: 1; overflow-y: auto; padding: 16px 20px; max-height: 320px; }
+		#papi-widget-header { 
+			padding: 16px 20px; 
+			border-bottom: 1px solid ${borderColor}; 
+		}
+		#papi-widget-header h3 { 
+			margin: 0; 
+			font-size: 15px; 
+			font-weight: 600; 
+			color: ${textColor}; 
+		}
+		#papi-widget-header p { 
+			margin: 4px 0 0; 
+			font-size: 12px; 
+			color: ${mutedColor}; 
+		}
+		#papi-widget-messages { 
+			flex: 1; 
+			overflow-y: auto; 
+			padding: 16px 20px; 
+			max-height: 320px; 
+		}
 		.papi-msg { margin-bottom: 12px; }
 		.papi-msg-user { text-align: right; }
-		.papi-msg-user span { background: #2563eb; color: white; padding: 8px 14px; border-radius: 16px 16px 4px 16px; display: inline-block; font-size: 14px; max-width: 85%; text-align: left; }
-		.papi-msg-bot span { background: #f3f4f6; color: #374151; padding: 8px 14px; border-radius: 16px 16px 16px 4px; display: inline-block; font-size: 14px; max-width: 85%; }
-		.papi-msg-meta { font-size: 10px; color: #9ca3af; margin-top: 2px; }
-		#papi-widget-input { padding: 12px 20px; border-top: 1px solid #f3f4f6; display: flex; gap: 8px; }
-		#papi-widget-input input { flex: 1; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; font-size: 14px; outline: none; font-family: inherit; }
-		#papi-widget-input input:focus { border-color: #2563eb; }
-		#papi-widget-input button { background: #2563eb; color: white; border: none; border-radius: 8px; padding: 8px 16px; font-size: 14px; cursor: pointer; font-family: inherit; font-weight: 500; }
+		.papi-msg-user span { 
+			background: ${COLOR}; 
+			color: white; 
+			padding: 8px 14px; 
+			border-radius: 16px 16px 4px 16px; 
+			display: inline-block; 
+			font-size: 14px; 
+			max-width: 85%; 
+			text-align: left; 
+		}
+		.papi-msg-bot span { 
+			background: ${isDark ? '#374151' : '#f3f4f6'}; 
+			color: ${isDark ? '#f9fafb' : '#374151'}; 
+			padding: 8px 14px; 
+			border-radius: 16px 16px 16px 4px; 
+			display: inline-block; 
+			font-size: 14px; 
+			max-width: 85%; 
+		}
+		.papi-msg-meta { 
+			font-size: 10px; 
+			color: ${mutedColor}; 
+			margin-top: 2px; 
+		}
+		#papi-widget-input { 
+			padding: 12px 20px; 
+			border-top: 1px solid ${borderColor}; 
+			display: flex; 
+			gap: 8px; 
+		}
+		#papi-widget-input input { 
+			flex: 1; 
+			border: 1px solid ${inputBorder}; 
+			border-radius: 8px; 
+			padding: 8px 12px; 
+			font-size: 14px; 
+			outline: none; 
+			font-family: inherit;
+			background: ${inputBg};
+			color: ${textColor};
+		}
+		#papi-widget-input input:focus { border-color: ${COLOR}; }
+		#papi-widget-input button { 
+			background: ${COLOR}; 
+			color: white; 
+			border: none; 
+			border-radius: 8px; 
+			padding: 8px 16px; 
+			font-size: 14px; 
+			cursor: pointer; 
+			font-family: inherit; 
+			font-weight: 500; 
+		}
 		#papi-widget-input button:disabled { opacity: 0.5; }
 	`;
 	document.head.appendChild(style);
@@ -34,15 +142,15 @@
 	const btn = document.createElement('button');
 	btn.id = 'papi-widget-btn';
 	btn.innerHTML = '<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>';
-	btn.setAttribute('aria-label', 'Ask Robin');
+	btn.setAttribute('aria-label', `Ask ${NAME}`);
 	document.body.appendChild(btn);
 
 	const panel = document.createElement('div');
 	panel.id = 'papi-widget-panel';
 	panel.innerHTML = `
 		<div id="papi-widget-header">
-			<h3>Ask Robin</h3>
-			<p>AI-powered answers about Robin's work and availability</p>
+			<h3>Ask ${NAME}</h3>
+			<p>AI-powered answers about their work and availability</p>
 		</div>
 		<div id="papi-widget-messages"></div>
 		<div id="papi-widget-input">
@@ -53,6 +161,8 @@
 	document.body.appendChild(panel);
 
 	let open = false;
+	let conversationId = null;
+	
 	btn.onclick = () => { open = !open; panel.classList.toggle('open', open); if (open) document.getElementById('papi-input').focus(); };
 
 	const msgArea = panel.querySelector('#papi-widget-messages');
@@ -74,13 +184,27 @@
 		addMsg(q, 'user');
 		sendBtn.disabled = true;
 		try {
+			const body = { 
+				query: q, 
+				name: 'Widget visitor', 
+				channel: 'widget' 
+			};
+			if (conversationId) {
+				body.conversation_id = conversationId;
+			}
+			
 			const res = await fetch(API + '/api/ask', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ query: q, name: 'Widget visitor', channel: 'widget' }),
+				body: JSON.stringify(body),
 			});
 			const data = await res.json();
-			addMsg(data.response || data.error || 'No response', 'bot', data.type === 'auto' ? 'Answered automatically' : 'Forwarded to Robin');
+			
+			if (data.conversation_id) {
+				conversationId = data.conversation_id;
+			}
+			
+			addMsg(data.response || data.error || 'No response', 'bot', data.type === 'auto' ? 'Answered automatically' : `Forwarded to ${NAME}`);
 		} catch(e) {
 			addMsg('Sorry, could not connect.', 'bot');
 		}

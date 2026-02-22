@@ -1,15 +1,64 @@
 import { json } from '@sveltejs/kit';
 import { supabase } from '$lib/server/supabase.js';
 
+export async function GET({ url }) {
+	const format = url.searchParams.get('format');
+	
+	if (format === 'json') {
+		// Export all knowledge as JSON
+		const { data: knowledge } = await supabase
+			.from('knowledge')
+			.select('*')
+			.order('category, key');
+			
+		return json(knowledge || []);
+	}
+	
+	return json({ error: 'Invalid format' }, { status: 400 });
+}
+
 export async function POST({ request }) {
-	const { category, key, value, context } = await request.json();
-	const { data, error } = await supabase
-		.from('knowledge')
-		.insert({ category, key, value, context: context || null })
-		.select()
-		.single();
-	if (error) return json({ error: error.message }, { status: 500 });
-	return json(data);
+	const contentType = request.headers.get('content-type');
+	
+	if (contentType === 'application/json') {
+		const body = await request.json();
+		
+		// Check if this is a bulk import (array of knowledge items)
+		if (Array.isArray(body)) {
+			// Bulk import
+			const knowledgeItems = body.map(item => ({
+				category: item.category || 'bio',
+				key: item.key,
+				value: item.value,
+				context: item.context || null,
+				priority: item.priority || 0
+			})).filter(item => item.key && item.value); // Only valid items
+
+			if (knowledgeItems.length === 0) {
+				return json({ error: 'No valid knowledge items found' }, { status: 400 });
+			}
+
+			const { data, error } = await supabase
+				.from('knowledge')
+				.insert(knowledgeItems)
+				.select();
+				
+			if (error) return json({ error: error.message }, { status: 500 });
+			return json({ imported: data.length, items: data });
+		} else {
+			// Single item creation
+			const { category, key, value, context } = body;
+			const { data, error } = await supabase
+				.from('knowledge')
+				.insert({ category, key, value, context: context || null })
+				.select()
+				.single();
+			if (error) return json({ error: error.message }, { status: 500 });
+			return json(data);
+		}
+	}
+	
+	return json({ error: 'Invalid content type' }, { status: 400 });
 }
 
 export async function DELETE({ url }) {

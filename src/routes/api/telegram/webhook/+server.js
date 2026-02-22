@@ -1,10 +1,19 @@
 import { json } from '@sveltejs/kit';
 import { processQuery } from '$lib/server/engine.js';
-import { sendTelegram, notifyOwner, answerCallback } from '$lib/server/telegram.js';
+import { sendTelegram, answerCallback } from '$lib/server/telegram.js';
+import { notify } from '$lib/server/notify.js';
 import { supabase } from '$lib/server/supabase.js';
-import { OWNER_TELEGRAM_ID } from '$env/static/private';
+import { OWNER_TELEGRAM_ID, TELEGRAM_WEBHOOK_SECRET } from '$env/static/private';
 
 export async function POST({ request }) {
+	// Verify webhook secret if configured
+	if (TELEGRAM_WEBHOOK_SECRET && TELEGRAM_WEBHOOK_SECRET !== 'placeholder') {
+		const providedSecret = request.headers.get('X-Telegram-Bot-Api-Secret-Token');
+		if (!providedSecret || providedSecret !== TELEGRAM_WEBHOOK_SECRET) {
+			return json({ error: 'Unauthorized' }, { status: 401 });
+		}
+	}
+
 	const update = await request.json();
 
 	// Handle callback queries (approve/reject/edit from owner)
@@ -33,23 +42,34 @@ export async function POST({ request }) {
 		return json({ ok: true });
 	}
 
+	// Get or create conversation for this Telegram chat
+	const { data: existingConv } = await supabase
+		.from('conversations')
+		.select('id')
+		.eq('sender_id', chatId)
+		.eq('channel', 'telegram')
+		.order('last_message_at', { ascending: false })
+		.limit(1)
+		.single();
+
 	// Public queries — process through engine
 	const result = await processQuery({
 		query: text,
 		channel: 'telegram',
 		senderName,
 		senderId: chatId,
+		conversationId: existingConv?.id || null,
 	});
 
 	if (result.classification === 'auto') {
 		await sendTelegram(chatId, result.response);
 	} else {
 		await sendTelegram(chatId, "Thanks! I'll pass this to Robin and get back to you.");
-		await notifyOwner({
-			classification: result.classification,
+		await notify({
+			type: result.classification,
 			query: text,
 			response: result.response,
-			senderName,
+			sender: senderName,
 			channel: 'telegram',
 			interactionId: result.interactionId,
 		});
@@ -118,11 +138,11 @@ async function handlePending(chatId) {
 	}
 
 	for (const i of data) {
-		await notifyOwner({
-			classification: i.classification,
+		await notify({
+			type: i.classification,
 			query: i.query,
 			response: i.response,
-			senderName: i.sender_name,
+			sender: i.sender_name,
 			channel: i.channel,
 			interactionId: i.id,
 		});
