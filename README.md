@@ -1,215 +1,180 @@
 # Personal API
 
-> Your AI surrogate. It talks to people so you don't have to.
+> Your AI gatekeeper. It qualifies people before they get your time.
 
-Personal API is an open-source AI gateway that sits between you and the world. People interact with your surrogate — it answers what it can, drafts responses for your approval, and only escalates what truly needs your attention.
+Personal API is an open-source AI agent that sits between you and the world. People don't get your calendar — they get your AI. If they have something worth meeting about, the AI grants access to book. Everyone else gets answered or redirected.
 
-**Self-hosted. Private. Yours.**
-
-## Why
-
-You're busy. People want your time. Most questions have known answers. Most requests follow patterns. Most cold outreach isn't worth reading.
-
-Personal API handles the 80% automatically and gives you a clean queue for the 20% that matters.
+**No more "let's find 30 minutes" with people who haven't earned it.**
 
 ## How it works
 
 ```
-Incoming message (any channel)
+Someone wants your time
         │
         ▼
-┌─────────────────┐
-│  Classification  │ ← Knowledge base + LLM
-│     Engine       │
-└────────┬────────┘
-         │
-    ┌────┴────┬──────────┐
-    ▼         ▼          ▼
-  AUTO      DRAFT     ESCALATE
- Answer    Queue for   Notify
-instantly  approval    immediately
+  "Tell me what you need"
+        │
+        ▼
+┌──────────────────────┐
+│   AI evaluates if    │
+│   this person has a  │
+│   real reason to     │
+│   meet you           │
+└──────────┬───────────┘
+           │
+     ┌─────┴─────┐
+     ▼           ▼
+ QUALIFIED    NOT QUALIFIED
+ Calendar     Gets answered
+ unlocks      or redirected
 ```
+
+### Qualification criteria (configurable):
+
+**Qualifies:** Specific proposal, relevant to your work, clear agenda, mutual value  
+**Doesn't qualify:** "Let's chat sometime", recruiting, generic sales, no clear purpose
 
 ## Features
 
-- **Knowledge base** — teach your surrogate who you are, what you do, how you work
-- **3-tier classification** — auto-respond, draft for review, or escalate
+- **AI gatekeeper** — evaluates and qualifies before granting calendar access
+- **Calendly-style scheduling** — date picker, time slots, timezone detection
+- **Google Calendar sync** — real-time availability, auto-creates events
+- **Knowledge base** — teach the AI about you, your work, your boundaries
 - **Multi-channel** — REST API, Telegram bot, embeddable widget
-- **Admin dashboard** — manage knowledge, review drafts, track interactions
-- **Contact awareness** — recognize known people, auto-escalate VIPs
-- **Templates** — pattern-matched auto-responses for common scenarios
-- **Full audit log** — every interaction tracked
+- **Contact awareness** — known contacts auto-qualify, VIPs auto-escalate
+- **Conversation memory** — multi-turn context, qualification persists
+- **Owner notifications** — Telegram + webhook for drafts, escalations, and new qualifications
+- **Admin dashboard** — manage everything from `/admin`
 
 ## Quick Start
-
-### 1. Clone & install
 
 ```bash
 git clone https://github.com/vaionex/personal-api.git
 cd personal-api
 npm install
-```
-
-### 2. Set up Supabase
-
-Create a [Supabase](https://supabase.com) project (free tier works), then run the schema:
-
-```bash
-# In Supabase SQL editor, run:
-# supabase/schema.sql    — creates tables
-# supabase/seed.sql      — optional: example data you can customize
-```
-
-### 3. Configure
-
-```bash
 cp .env.example .env
+# Fill in your values (Supabase, Anthropic/OpenAI, Telegram)
+# Run supabase/schema.sql + supabase/seed.sql
+npm run dev
 ```
+
+## The Flow
+
+### 1. Someone visits your page
+They see a chat interface: *"Tell me what you need — if it's worth a meeting, I'll give you access to the calendar."*
+
+### 2. They talk to your AI
+Your surrogate knows everything in your knowledge base. It answers factual questions freely.
+
+### 3. They ask for a meeting
+The AI doesn't just hand out a booking link. It asks: *"What specifically would you like to discuss?"*
+
+### 4. They qualify (or don't)
+If they give a specific, relevant reason → the "Book a meeting" button appears and the AI shares booking links.  
+If they're vague or irrelevant → politely redirected to async channels.
+
+### 5. They book
+Standard Calendly-style flow: pick a meeting type → select a date → choose a time → confirm.
+
+## Scheduling
+
+### Google Calendar Integration (optional)
 
 ```env
-# Required
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-ANTHROPIC_API_KEY=sk-ant-...
-
-# Telegram (optional)
-TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
-OWNER_TELEGRAM_ID=your-telegram-id
-
-# App
-PUBLIC_APP_NAME=Personal API
-PUBLIC_OWNER_NAME=Your Name
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_REFRESH_TOKEN=your-refresh-token
 ```
 
-### 4. Run
+Get your refresh token: visit `/api/admin/google-auth` to start the OAuth flow.
 
+With Google Calendar connected:
+- Availability computed from real calendar (freebusy API)
+- Bookings create calendar events with attendee invites
+- Cancellations sync to Google Calendar
+
+Without Google Calendar: works standalone using Supabase bookings table.
+
+### Meeting Types
+
+Configure in admin or seed data:
+
+| Type | Duration | Use case |
+|---|---|---|
+| Quick Chat | 15 min | Intros, quick questions |
+| Consultation | 30 min | Project discussions |
+| Deep Dive | 60 min | Complex technical topics |
+
+### Availability Rules
+
+Set per-day availability windows in admin:
+- Monday–Thursday: 9:00–17:00
+- Friday: 9:00–12:00
+- Weekends: unavailable
+
+## Channels
+
+### Website Widget
+```html
+<script src="https://your-domain.com/widget.js" data-api="https://your-domain.com" data-name="Robin's AI"></script>
+```
+
+Widget attributes: `data-api`, `data-name`, `data-color`, `data-position` (left/right), `data-theme` (light/dark)
+
+### Telegram Bot
+Create a bot via [@BotFather](https://t.me/BotFather), set webhook:
 ```bash
-npm run dev     # Development
-npm run build   # Production build
-node build      # Run production
+curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://your-domain.com/api/telegram/webhook&secret_token=YOUR_SECRET"
 ```
 
-### 5. Deploy
+### REST API
+```bash
+curl -X POST https://your-domain.com/api/ask \
+  -H "Content-Type: application/json" \
+  -d '{"query": "I want to discuss integrating your API into our product", "name": "Jane", "conversation_id": "optional-uuid"}'
+```
 
-Works anywhere Node.js runs. Docker, Coolify, Railway, Fly.io, VPS — pick your poison.
+Response includes `qualified: true/false` and `conversation_id` for multi-turn.
+
+## Admin
+
+- `/admin` — Knowledge base, templates, interaction log
+- `/admin/bookings` — Upcoming bookings, meeting types, availability rules
+- `/admin/contacts` — Manage known contacts, set auto-qualify/escalate
+- `/admin/settings` — Configuration overview
+
+## Deploy
 
 ```dockerfile
-FROM node:22-alpine
+FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
-ENV PORT=3000
+
+FROM node:22-alpine
+WORKDIR /app
+COPY --from=builder /app/build ./build
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
 EXPOSE 3000
 CMD ["node", "build"]
 ```
 
-## Channels
+Works on Coolify, Railway, Fly.io, any Docker host.
 
-### REST API
+## Stack
 
-```bash
-curl -X POST https://your-domain.com/api/ask \
-  -H "Content-Type: application/json" \
-  -d '{"query": "What does this person work on?", "name": "Jane"}'
-```
-
-### Embeddable Widget
-
-Drop on any website:
-```html
-<script src="https://your-domain.com/widget.js" data-api="https://your-domain.com"></script>
-```
-
-### Telegram Bot
-
-1. Create a bot via [@BotFather](https://t.me/BotFather)
-2. Set `TELEGRAM_BOT_TOKEN` and `OWNER_TELEGRAM_ID`
-3. Register webhook:
-```bash
-curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://your-domain.com/api/telegram/webhook"
-```
-
-People message your bot → surrogate responds or notifies you with approve/reject buttons.
-
-## Knowledge Base
-
-Your surrogate is only as good as what you teach it. Categories:
-
-| Category | What it stores | Example |
-|---|---|---|
-| `bio` | Who you are | Name, role, background |
-| `project` | What you build | Active projects, tech stacks |
-| `preference` | How you work | Communication style, timezone, tools |
-| `stance` | Your opinions | Tech choices, industry takes |
-| `boundary` | What you don't do | No free consulting, no crypto |
-| `faq` | Pre-answered questions | Availability, collaboration process |
-
-Manage via the admin dashboard at `/admin` or directly in Supabase.
-
-## Architecture
-
-```
-personal-api/
-├── src/
-│   ├── lib/
-│   │   └── server/
-│   │       ├── engine.js      # Core: classify + generate
-│   │       ├── supabase.js    # Database client
-│   │       └── telegram.js    # Telegram bot helpers
-│   ├── routes/
-│   │   ├── +page.svelte       # Public chat interface
-│   │   ├── admin/             # Knowledge + interaction management
-│   │   └── api/
-│   │       ├── ask/           # Main query endpoint
-│   │       └── telegram/      # Webhook handler
-│   └── hooks.server.js        # CORS
-├── static/
-│   └── widget.js              # Embeddable chat widget
-├── supabase/
-│   ├── schema.sql             # Database schema
-│   └── seed.sql               # Example seed data
-└── docker-compose.yml
-```
-
-## Configuration
-
-### LLM Provider
-
-Default: Anthropic Claude. The engine uses a single function call — swap the provider in `src/lib/server/engine.js` if you prefer OpenAI, local models, etc.
-
-### Customizing Classification
-
-Edit the system prompt in `engine.js` to change how your surrogate behaves:
-- What it auto-responds to
-- When it drafts vs. escalates
-- Tone and personality
-- What it refuses to answer
-
-## Roadmap
-
-- [ ] Email channel (IMAP watch + SMTP send)
-- [ ] Webhook notifications (Discord, Slack, etc.)
-- [ ] Conversation threads (multi-turn)
-- [ ] Analytics dashboard
-- [ ] Rate limiting per sender
-- [ ] Multiple user support
-- [ ] Plugin system for custom channels
-- [ ] OpenAI / Ollama provider support
+- SvelteKit + adapter-node
+- Supabase (PostgreSQL)
+- Anthropic Claude or OpenAI (configurable via `LLM_PROVIDER`)
+- Google Calendar API (optional)
+- Telegram Bot API (optional)
 
 ## Contributing
 
-Contributions welcome. Open an issue first for anything non-trivial.
-
-```bash
-git clone https://github.com/vaionex/personal-api.git
-cd personal-api
-npm install
-cp .env.example .env  # Fill in your values
-npm run dev
-```
+Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

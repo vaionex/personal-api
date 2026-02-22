@@ -4,12 +4,9 @@ import { notify } from './notify.js';
 import { PUBLIC_OWNER_NAME, PUBLIC_APP_URL } from '$env/static/public';
 import { getEventTypes, getSchedulingRules } from './calendar.js';
 
-/**
- * Core Personal API Engine
- * 1. Loads knowledge base
- * 2. Classifies incoming query
- * 3. Generates response or escalates
- */
+// ---------------------------------------------------------------------------
+// Data loaders
+// ---------------------------------------------------------------------------
 
 export async function getKnowledge() {
 	const { data } = await supabase
@@ -43,6 +40,10 @@ export async function getConversation(conversationId) {
 	return data || null;
 }
 
+// ---------------------------------------------------------------------------
+// System prompt builder
+// ---------------------------------------------------------------------------
+
 function buildSystemPrompt(knowledge, templates, scheduling = null) {
 	const sections = {};
 	for (const k of knowledge) {
@@ -51,20 +52,42 @@ function buildSystemPrompt(knowledge, templates, scheduling = null) {
 	}
 
 	const owner = PUBLIC_OWNER_NAME || 'the owner';
-	let prompt = `You are ${owner}'s Personal API — an AI surrogate that represents ${owner} professionally.
-You answer questions, handle requests, and draft responses as ${owner} would.
+	const appUrl = PUBLIC_APP_URL || '';
 
-## Your role:
-- Be helpful, direct, and efficient
-- Answer factual questions about ${owner}'s work, projects, and availability
-- Politely decline things ${owner} wouldn't be interested in
-- For anything requiring real judgment, say you'll pass it to ${owner}
+	let prompt = `You are ${owner}'s Personal API — an AI gatekeeper that qualifies people before they get access to ${owner}'s time.
+
+## Your core job:
+People want ${owner}'s time. Your job is to figure out if they deserve it.
+
+1. Answer factual questions (projects, tech stack, background) — this is free
+2. EVALUATE if the person has a legitimate, specific reason to meet ${owner}
+3. Only grant booking access to people who qualify
+4. Politely redirect everyone else
+
+## Qualification criteria:
+A person QUALIFIES for a meeting if they demonstrate:
+- A specific, concrete proposal (not "let's chat sometime")
+- Relevance to ${owner}'s work or interests
+- They've done their homework (know what ${owner} works on)
+- A clear ask with mutual value (not just taking ${owner}'s time)
+
+A person DOES NOT qualify if:
+- Vague requests ("I'd love to pick your brain")
+- Recruiting/headhunting (${owner} runs their own company)
+- Generic sales pitches
+- No clear agenda or purpose
+- They haven't explained WHY they need a meeting
+
+## How to handle requests for meetings:
+- If someone asks to meet WITHOUT qualifying first → ask them to explain what they want to discuss and why. Be friendly but direct.
+- If they qualify after explaining → include a booking link in your response
+- If they don't qualify → politely decline and suggest async alternatives (email, the chat itself)
+- Known contacts with relationship "close" or "professional" → always qualify
 
 ## Classification:
-For each incoming message, classify it as:
-- "auto" — you can fully handle this (factual questions, standard declines, FAQ)
-- "draft" — you should draft a response for ${owner} to approve (partnerships, opportunities, nuanced requests)
-- "escalate" — ${owner} needs to see this personally (close contacts, urgent matters, things requiring judgment)
+- "auto" — factual questions, standard declines, and QUALIFIED booking responses
+- "draft" — borderline cases, interesting proposals that need ${owner}'s judgment
+- "escalate" — known important contacts, urgent matters
 
 ## ${owner}'s information:\n\n`;
 
@@ -79,14 +102,12 @@ For each incoming message, classify it as:
 		}
 	}
 
-	// Scheduling context
+	// Scheduling — only included so the AI knows what links to share
 	if (scheduling && scheduling.eventTypes.length > 0) {
-		const appUrl = PUBLIC_APP_URL || '';
 		const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-		prompt += `### Scheduling\n`;
-		prompt += `${owner} accepts meetings. Available types:\n`;
+		prompt += `### Meeting types (only share when person qualifies)\n`;
 		for (const et of scheduling.eventTypes) {
-			prompt += `- "${et.name}" (${et.duration_minutes} min) — book at ${appUrl}/schedule/${et.slug}\n`;
+			prompt += `- "${et.name}" (${et.duration_minutes} min): ${appUrl}/schedule/${et.slug}\n`;
 		}
 		if (scheduling.rules.length > 0) {
 			const byDay = {};
@@ -95,25 +116,35 @@ For each incoming message, classify it as:
 				if (!byDay[r.day_of_week]) byDay[r.day_of_week] = [];
 				byDay[r.day_of_week].push(`${r.start_time}–${r.end_time}`);
 			}
-			prompt += `General availability:\n`;
+			prompt += `Availability: `;
+			const parts = [];
 			for (const [day, windows] of Object.entries(byDay)) {
-				prompt += `- ${dayNames[day]}: ${windows.join(', ')}\n`;
+				parts.push(`${dayNames[day]} ${windows.join(', ')}`);
 			}
+			prompt += parts.join('; ') + '\n';
 		}
-		prompt += `\nWhen someone wants to meet or schedule a call, share the scheduling link. Don't try to book for them — direct them to the link.\n\n`;
+		prompt += `\nIMPORTANT: Do NOT share booking links until the person has qualified. If they ask to book, first ask what they want to discuss. Only after they give a specific, relevant reason, share the appropriate booking link.\n\n`;
 	}
 
-	prompt += `\n## Response format:
+	prompt += `## Response format:
 Return a JSON object (no markdown wrapping):
 {
   "classification": "auto" | "draft" | "escalate",
   "response": "your response text",
-  "reason": "brief reason for classification",
+  "qualified": true | false,
+  "qualification_reason": "why they did/didn't qualify (brief)",
+  "reason": "brief classification reason",
   "confidence": 0.0-1.0
-}`;
+}
+
+The "qualified" field indicates if this person has earned access to ${owner}'s calendar in this conversation. Once qualified, booking links can be shared.`;
 
 	return prompt;
 }
+
+// ---------------------------------------------------------------------------
+// Main query processor
+// ---------------------------------------------------------------------------
 
 export async function processQuery({ query, channel, senderName, senderId, metadata = {}, conversationId = null }) {
 	const [knowledge, templates, contact, conversation, eventTypes, schedulingRules] = await Promise.all([
@@ -125,57 +156,60 @@ export async function processQuery({ query, channel, senderName, senderId, metad
 		getSchedulingRules(),
 	]);
 
-	// Known close contact → always escalate
+	// Known close contact → always escalate + auto-qualify
 	if (contact?.always_escalate) {
 		const interaction = await logInteraction({
 			channel, senderName, senderId, query,
 			classification: 'escalate',
 			response: null,
 			status: 'escalated',
-			metadata: { ...metadata, contact_id: contact.id },
+			metadata: { ...metadata, contact_id: contact.id, qualified: true },
 		});
-		return { classification: 'escalate', response: null, reason: 'Known contact marked for escalation', interactionId: interaction.id };
+		return { classification: 'escalate', response: null, qualified: true, reason: 'Known contact marked for escalation', interactionId: interaction.id };
 	}
+
+	// Check if this conversation has already been qualified
+	const previouslyQualified = conversation?.messages?.some(m =>
+		m.role === 'assistant' && m.qualified === true
+	) || false;
+
+	// Known professional/close contacts auto-qualify
+	const autoQualify = contact && ['close', 'professional'].includes(contact.relationship);
 
 	const scheduling = { eventTypes, rules: schedulingRules };
 	const systemPrompt = buildSystemPrompt(knowledge, templates, scheduling);
 
 	// Build messages array for conversation context
 	let messages = [];
-	
-	// Add conversation history (last 5 messages)
+
 	if (conversation && conversation.messages) {
-		const recentMessages = conversation.messages.slice(-5);
+		const recentMessages = conversation.messages.slice(-10);
 		for (const msg of recentMessages) {
-			messages.push({
-				role: msg.role,
-				content: msg.content
-			});
+			messages.push({ role: msg.role, content: msg.content });
 		}
 	}
 
-	// Add current message
-	const userMessage = `Channel: ${channel}
-Sender: ${senderName || 'Unknown'}${contact ? ` (Known contact: ${contact.relationship})` : ''}
-Message: ${query}`;
-	
+	let userMessage = `Channel: ${channel}
+Sender: ${senderName || 'Unknown'}`;
+	if (contact) userMessage += ` (Known contact: ${contact.relationship})`;
+	if (previouslyQualified || autoQualify) userMessage += ` [PREVIOUSLY QUALIFIED — booking links can be shared]`;
+	userMessage += `\nMessage: ${query}`;
+
 	messages.push({ role: 'user', content: userMessage });
 
-	const llmResponse = await callLLM({
-		system: systemPrompt,
-		messages: messages,
-	});
-	
+	const llmResponse = await callLLM({ system: systemPrompt, messages });
 	const text = llmResponse.text || '{}';
 
 	let result;
 	try {
-		// Strip markdown code fences if present
 		const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 		result = JSON.parse(cleaned);
 	} catch {
-		result = { classification: 'escalate', response: text, reason: 'Failed to parse LLM response', confidence: 0 };
+		result = { classification: 'escalate', response: text, qualified: false, reason: 'Failed to parse LLM response', confidence: 0 };
 	}
+
+	// Override qualification for known contacts
+	if (autoQualify) result.qualified = true;
 
 	const status = result.classification === 'auto' ? 'sent' :
 		result.classification === 'draft' ? 'pending' : 'escalated';
@@ -185,21 +219,32 @@ Message: ${query}`;
 		classification: result.classification,
 		response: result.response,
 		status,
-		metadata: { ...metadata, reason: result.reason, confidence: result.confidence },
+		metadata: {
+			...metadata,
+			reason: result.reason,
+			confidence: result.confidence,
+			qualified: result.qualified,
+			qualification_reason: result.qualification_reason,
+		},
 	});
 
-	// Handle conversation tracking
 	const finalConversationId = await updateConversation({
-		conversationId,
-		senderId,
-		senderName,
-		channel,
+		conversationId, senderId, senderName, channel,
 		userMessage: query,
-		assistantMessage: result.response
+		assistantMessage: result.response,
+		qualified: result.qualified,
 	});
 
-	return { ...result, interactionId: interaction.id, conversation_id: finalConversationId };
+	return {
+		...result,
+		interactionId: interaction.id,
+		conversation_id: finalConversationId,
+	};
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 async function logInteraction({ channel, senderName, senderId, query, classification, response, status, metadata }) {
 	const { data, error } = await supabase
@@ -215,37 +260,32 @@ async function logInteraction({ channel, senderName, senderId, query, classifica
 	return data || { id: 'unknown' };
 }
 
-async function updateConversation({ conversationId, senderId, senderName, channel, userMessage, assistantMessage }) {
+async function updateConversation({ conversationId, senderId, senderName, channel, userMessage, assistantMessage, qualified }) {
 	const now = new Date().toISOString();
-	
+
 	if (conversationId) {
-		// Update existing conversation
 		const { data: currentConv } = await supabase
 			.from('conversations')
 			.select('messages')
 			.eq('id', conversationId)
 			.single();
-			
+
 		if (currentConv) {
 			const messages = currentConv.messages || [];
 			messages.push(
 				{ role: 'user', content: userMessage, timestamp: now },
-				{ role: 'assistant', content: assistantMessage, timestamp: now }
+				{ role: 'assistant', content: assistantMessage, timestamp: now, qualified },
 			);
-			
+
 			await supabase
 				.from('conversations')
-				.update({ 
-					messages, 
-					last_message_at: now 
-				})
+				.update({ messages, last_message_at: now })
 				.eq('id', conversationId);
-				
+
 			return conversationId;
 		}
 	}
-	
-	// Create new conversation
+
 	const { data, error } = await supabase
 		.from('conversations')
 		.insert({
@@ -254,13 +294,13 @@ async function updateConversation({ conversationId, senderId, senderName, channe
 			channel,
 			messages: [
 				{ role: 'user', content: userMessage, timestamp: now },
-				{ role: 'assistant', content: assistantMessage, timestamp: now }
+				{ role: 'assistant', content: assistantMessage, timestamp: now, qualified },
 			],
-			last_message_at: now
+			last_message_at: now,
 		})
 		.select('id')
 		.single();
-		
+
 	if (error) console.error('Failed to create conversation:', error);
 	return data?.id || null;
 }

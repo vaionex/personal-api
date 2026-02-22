@@ -1,43 +1,34 @@
 import { json } from '@sveltejs/kit';
 import { processQuery } from '$lib/server/engine.js';
 import { notify } from '$lib/server/notify.js';
-import { PUBLIC_OWNER_NAME } from '$env/static/public';
 import { checkRateLimit } from '$lib/server/ratelimit.js';
-import { PAPI_API_KEYS } from '$env/static/private';
+import { PUBLIC_OWNER_NAME } from '$env/static/public';
 
 export async function POST({ request, getClientAddress }) {
-	// API Key authentication (if configured)
-	if (PAPI_API_KEYS && PAPI_API_KEYS !== 'placeholder') {
-		const authHeader = request.headers.get('authorization');
-		const providedKey = authHeader?.startsWith('Bearer ') 
-			? authHeader.slice(7) 
-			: null;
-			
-		const validKeys = PAPI_API_KEYS.split(',').map(k => k.trim());
-		
-		if (!providedKey || !validKeys.includes(providedKey)) {
-			return json({ error: 'Invalid or missing API key' }, { status: 401 });
+	// Rate limiting
+	const ip = getClientAddress();
+	const rateLimitResult = checkRateLimit(ip);
+	if (!rateLimitResult.allowed) {
+		return json({ error: 'Too many requests. Please try again later.' }, {
+			status: 429,
+			headers: { 'Retry-After': String(rateLimitResult.retryAfter) },
+		});
+	}
+
+	// Optional API key auth
+	const apiKeys = (process.env.PAPI_API_KEYS || '').split(',').filter(Boolean);
+	if (apiKeys.length > 0) {
+		const authHeader = request.headers.get('Authorization');
+		const token = authHeader?.replace('Bearer ', '');
+		// Allow unauthenticated widget/telegram requests, but enforce for API channel
+		const body = await request.clone().json();
+		if (body.channel === 'api' && (!token || !apiKeys.includes(token))) {
+			return json({ error: 'Invalid API key' }, { status: 401 });
 		}
 	}
 
-	// Rate limiting
-	const clientIP = getClientAddress();
-	const rateLimit = checkRateLimit(clientIP);
-	
-	if (!rateLimit.allowed) {
-		return json(
-			{ error: 'Rate limit exceeded. Try again later.' }, 
-			{ 
-				status: 429,
-				headers: {
-					'X-RateLimit-Remaining': '0',
-					'X-RateLimit-Reset': String(rateLimit.resetAt)
-				}
-			}
-		);
-	}
-	
-	const { query, name, channel = 'api', metadata = {}, conversation_id } = await request.json();
+	const { query, name, channel = 'widget', metadata = {}, conversation_id } = await request.json();
+	const owner = PUBLIC_OWNER_NAME || 'Owner';
 
 	if (!query || typeof query !== 'string' || query.trim().length === 0) {
 		return json({ error: 'query is required' }, { status: 400 });
@@ -60,45 +51,46 @@ export async function POST({ request, getClientAddress }) {
 	if (result.classification !== 'auto') {
 		await notify({
 			type: result.classification,
-			query: query.trim(),
-			response: result.response,
-			sender: name,
-			channel,
-			interactionId: result.interactionId,
+			title: result.classification === 'escalate' ? 'Needs your attention' : 'Draft ready for review',
+			message: `From: ${name || 'Unknown'} (${channel})\nQuery: ${query.trim()}\n${result.response ? `Draft: ${result.response}` : ''}${result.qualified ? '\n✅ Qualified for meeting' : ''}`,
 		});
 	}
 
-	const rateLimitHeaders = {
-		'X-RateLimit-Remaining': String(rateLimit.remaining)
-	};
+	// Also notify on qualification events
+	if (result.qualified && result.classification === 'auto') {
+		await notify({
+			type: 'qualified',
+			title: 'Someone qualified for a meeting',
+			message: `${name || 'Unknown'} (${channel}) qualified: ${result.qualification_reason || 'met criteria'}`,
+		});
+	}
 
-	// For auto-responses, return immediately
-	// For drafts/escalations, return acknowledgment
 	if (result.classification === 'auto') {
 		return json({
 			response: result.response,
 			type: 'auto',
+			qualified: result.qualified || false,
 			conversation_id: result.conversation_id,
-		}, { headers: rateLimitHeaders });
+		});
 	}
 
 	return json({
 		response: result.classification === 'draft'
-			? "Thanks! I've noted your message and will get back to you shortly."
-			: `I'll pass this to ${PUBLIC_OWNER_NAME} directly — expect a response soon.`,
+			? `Thanks for the details! I'm reviewing this and will get back to you shortly.`
+			: `I'll pass this to ${owner} directly — expect a response soon.`,
 		type: result.classification,
+		qualified: result.qualified || false,
 		conversation_id: result.conversation_id,
-	}, { headers: rateLimitHeaders });
+	});
 }
 
-// CORS preflight
 export async function OPTIONS() {
 	return new Response(null, {
 		status: 204,
 		headers: {
 			'Access-Control-Allow-Origin': '*',
 			'Access-Control-Allow-Methods': 'POST, OPTIONS',
-			'Access-Control-Allow-Headers': 'Content-Type',
+			'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 		},
 	});
 }
