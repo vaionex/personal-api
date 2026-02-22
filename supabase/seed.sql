@@ -33,6 +33,20 @@ INSERT INTO knowledge (category, key, value, priority) VALUES
 ('faq', 'Available for freelance?', 'Your standard answer about availability', 8),
 ('faq', 'How to collaborate?', 'Your process for working with people', 7);
 
+-- Example event types
+INSERT INTO event_types (slug, name, description, duration_minutes, buffer_minutes, color) VALUES
+('quick-chat', 'Quick Chat', 'A short 15-minute intro call', 15, 5, '#2563eb'),
+('consultation', 'Consultation', '30-minute consultation for projects or technical questions', 30, 10, '#7c3aed'),
+('deep-dive', 'Deep Dive', '60-minute in-depth session for complex topics', 60, 15, '#059669');
+
+-- Example availability: Mon-Fri 9am-5pm
+INSERT INTO scheduling_rules (day_of_week, start_time, end_time, available) VALUES
+(1, '09:00', '17:00', true),  -- Monday
+(2, '09:00', '17:00', true),  -- Tuesday
+(3, '09:00', '17:00', true),  -- Wednesday
+(4, '09:00', '17:00', true),  -- Thursday
+(5, '09:00', '12:00', true);  -- Friday (mornings only)
+
 -- Auto-response templates
 INSERT INTO templates (trigger_pattern, response_template, auto_send) VALUES
 ('recruiter_outreach', 'Thanks for reaching out! I''m not looking for employment at the moment. Best of luck with the search!', true),

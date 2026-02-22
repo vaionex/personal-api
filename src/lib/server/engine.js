@@ -1,7 +1,8 @@
 import { supabase } from './supabase.js';
 import { callLLM } from './providers/index.js';
 import { notify } from './notify.js';
-import { PUBLIC_OWNER_NAME } from '$env/static/public';
+import { PUBLIC_OWNER_NAME, PUBLIC_APP_URL } from '$env/static/public';
+import { getEventTypes, getSchedulingRules } from './calendar.js';
 
 /**
  * Core Personal API Engine
@@ -42,7 +43,7 @@ export async function getConversation(conversationId) {
 	return data || null;
 }
 
-function buildSystemPrompt(knowledge, templates) {
+function buildSystemPrompt(knowledge, templates, scheduling = null) {
 	const sections = {};
 	for (const k of knowledge) {
 		if (!sections[k.category]) sections[k.category] = [];
@@ -78,6 +79,30 @@ For each incoming message, classify it as:
 		}
 	}
 
+	// Scheduling context
+	if (scheduling && scheduling.eventTypes.length > 0) {
+		const appUrl = PUBLIC_APP_URL || '';
+		const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+		prompt += `### Scheduling\n`;
+		prompt += `${owner} accepts meetings. Available types:\n`;
+		for (const et of scheduling.eventTypes) {
+			prompt += `- "${et.name}" (${et.duration_minutes} min) — book at ${appUrl}/schedule/${et.slug}\n`;
+		}
+		if (scheduling.rules.length > 0) {
+			const byDay = {};
+			for (const r of scheduling.rules) {
+				if (!r.available) continue;
+				if (!byDay[r.day_of_week]) byDay[r.day_of_week] = [];
+				byDay[r.day_of_week].push(`${r.start_time}–${r.end_time}`);
+			}
+			prompt += `General availability:\n`;
+			for (const [day, windows] of Object.entries(byDay)) {
+				prompt += `- ${dayNames[day]}: ${windows.join(', ')}\n`;
+			}
+		}
+		prompt += `\nWhen someone wants to meet or schedule a call, share the scheduling link. Don't try to book for them — direct them to the link.\n\n`;
+	}
+
 	prompt += `\n## Response format:
 Return a JSON object (no markdown wrapping):
 {
@@ -91,11 +116,13 @@ Return a JSON object (no markdown wrapping):
 }
 
 export async function processQuery({ query, channel, senderName, senderId, metadata = {}, conversationId = null }) {
-	const [knowledge, templates, contact, conversation] = await Promise.all([
+	const [knowledge, templates, contact, conversation, eventTypes, schedulingRules] = await Promise.all([
 		getKnowledge(),
 		getTemplates(),
 		getContact(senderName, senderId),
 		conversationId ? getConversation(conversationId) : null,
+		getEventTypes(),
+		getSchedulingRules(),
 	]);
 
 	// Known close contact → always escalate
@@ -110,7 +137,8 @@ export async function processQuery({ query, channel, senderName, senderId, metad
 		return { classification: 'escalate', response: null, reason: 'Known contact marked for escalation', interactionId: interaction.id };
 	}
 
-	const systemPrompt = buildSystemPrompt(knowledge, templates);
+	const scheduling = { eventTypes, rules: schedulingRules };
+	const systemPrompt = buildSystemPrompt(knowledge, templates, scheduling);
 
 	// Build messages array for conversation context
 	let messages = [];
