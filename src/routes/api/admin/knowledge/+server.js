@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { supabase } from '$lib/server/supabase.js';
+import { sanitizeForPrompt, sanitizeInput } from '$lib/server/sanitize.js';
 
 export async function GET({ url }) {
 	const format = url.searchParams.get('format');
@@ -28,9 +29,9 @@ export async function POST({ request }) {
 			// Bulk import
 			const knowledgeItems = body.map(item => ({
 				category: item.category || 'bio',
-				key: item.key,
-				value: item.value,
-				context: item.context || null,
+				key: sanitizeInput(item.key),
+				value: sanitizeForPrompt(item.value),
+				context: item.context ? sanitizeForPrompt(item.context) : null,
 				priority: item.priority || 0
 			})).filter(item => item.key && item.value); // Only valid items
 
@@ -50,7 +51,12 @@ export async function POST({ request }) {
 			const { category, key, value, context } = body;
 			const { data, error } = await supabase
 				.from('knowledge')
-				.insert({ category, key, value, context: context || null })
+				.insert({ 
+					category, 
+					key: sanitizeInput(key), 
+					value: sanitizeForPrompt(value), 
+					context: context ? sanitizeForPrompt(context) : null 
+				})
 				.select()
 				.single();
 			if (error) return json({ error: error.message }, { status: 500 });

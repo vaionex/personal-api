@@ -1,7 +1,9 @@
 import { json } from '@sveltejs/kit';
 import { supabase } from '$lib/server/supabase.js';
 import { getOrCreateTrust, addTrustPoints } from '$lib/server/trust.js';
+import { sendPitchResult } from '$lib/server/email.js';
 import { ADMIN_PASSWORD } from '$env/static/private';
+import { PUBLIC_OWNER_NAME } from '$env/static/public';
 
 function requireAuth(request) {
 	const auth = request.headers.get('authorization');
@@ -126,6 +128,16 @@ export async function PATCH({ request }) {
 					.update({ messages })
 					.eq('id', pitch.conversation_id);
 			}
+		}
+
+		// Send email notification when status changes to approved or rejected
+		if ((status === 'approved' || status === 'rejected') && pitch.status !== status) {
+			await sendPitchResult({
+				email: pitch.sender_email,
+				name: pitch.sender_name || 'there',
+				approved: status === 'approved',
+				ownerName: PUBLIC_OWNER_NAME || 'Personal API'
+			});
 		}
 		
 		return json({ success: true });

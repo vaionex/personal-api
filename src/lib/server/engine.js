@@ -4,6 +4,7 @@ import { notify } from './notify.js';
 import { PUBLIC_OWNER_NAME, PUBLIC_APP_URL } from '$env/static/public';
 import { getEventTypes, getSchedulingRules } from './calendar.js';
 import { getOrCreateTrust, addTrustPoints, getTier, validateReferral, useReferral } from './trust.js';
+import { sanitizeForPrompt } from './sanitize.js';
 
 // ---------------------------------------------------------------------------
 // Data loaders
@@ -49,7 +50,7 @@ function buildSystemPrompt(knowledge, templates, scheduling = null, trustTier = 
 	const sections = {};
 	for (const k of knowledge) {
 		if (!sections[k.category]) sections[k.category] = [];
-		sections[k.category].push(`- ${k.key}: ${k.value}${k.context ? ` (${k.context})` : ''}`);
+		sections[k.category].push(`- ${k.key}: ${sanitizeForPrompt(k.value)}${k.context ? ` (${sanitizeForPrompt(k.context)})` : ''}`);
 	}
 
 	const owner = PUBLIC_OWNER_NAME || 'the owner';
@@ -110,7 +111,7 @@ For borderline qualification cases, or when someone seems genuine but you can't 
 	if (templates.length > 0) {
 		prompt += `### Response templates\n`;
 		for (const t of templates) {
-			prompt += `- Pattern "${t.trigger_pattern}": ${t.response_template}\n`;
+			prompt += `- Pattern "${t.trigger_pattern}": ${sanitizeForPrompt(t.response_template)}\n`;
 		}
 	}
 

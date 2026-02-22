@@ -3,6 +3,8 @@ import { processQuery } from '$lib/server/engine.js';
 import { notify } from '$lib/server/notify.js';
 import { checkRateLimit } from '$lib/server/ratelimit.js';
 import { PUBLIC_OWNER_NAME } from '$env/static/public';
+import { applyRouting } from './routing.js';
+import { createProofEvent } from '$lib/server/proof.js';
 
 export async function POST({ request, getClientAddress }) {
 	// Rate limiting
@@ -48,6 +50,30 @@ export async function POST({ request, getClientAddress }) {
 		referralToken: referral_token || null,
 	});
 
+	// Apply routing after processQuery
+	const routingResult = await applyRouting(result, query.trim());
+
+	// Add routing info to response if available
+	if (routingResult?.topic) {
+		result.topic = routingResult.topic;
+		result.suggestedEventType = routingResult.eventType;
+		
+		// If routing suggests auto-qualification and result wasn't already qualified
+		if (routingResult.autoQualify && !result.qualified) {
+			result.qualified = true;
+			result.qualification_reason = 'Auto-qualified via routing rules';
+		}
+	}
+
+	// Create proof event for qualified interactions
+	if (result.qualified === true) {
+		await createProofEvent({
+			eventType: 'qualified',
+			senderName: name || 'Someone',
+			topic: result.topic || null
+		});
+	}
+
 	// Notify owner for drafts and escalations
 	if (result.classification !== 'auto') {
 		await notify({
@@ -73,6 +99,8 @@ export async function POST({ request, getClientAddress }) {
 			qualified: result.qualified || false,
 			conversation_id: result.conversation_id,
 			trust: result.trust || null,
+			topic: result.topic || null,
+			suggestedEventType: result.suggestedEventType || null,
 		});
 	}
 
@@ -84,6 +112,8 @@ export async function POST({ request, getClientAddress }) {
 		qualified: result.qualified || false,
 		conversation_id: result.conversation_id,
 		trust: result.trust || null,
+		topic: result.topic || null,
+		suggestedEventType: result.suggestedEventType || null,
 	});
 }
 

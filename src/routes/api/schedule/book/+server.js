@@ -3,6 +3,7 @@ import { bookSlot } from '$lib/server/calendar.js';
 import { notify } from '$lib/server/notify.js';
 import { generateDossier } from '$lib/server/dossier.js';
 import { createProofEvent } from '$lib/server/proof.js';
+import { sendBookingConfirmation } from '$lib/server/email.js';
 import { PUBLIC_OWNER_NAME, PUBLIC_APP_URL } from '$env/static/public';
 
 export async function POST({ request }) {
@@ -45,6 +46,20 @@ export async function POST({ request }) {
 		eventType: 'booked',
 		senderName: name,
 		meetingType: result.event.name
+	});
+
+	// Send booking confirmation email
+	const endTime = new Date(new Date(startTime).getTime() + result.event.duration_minutes * 60000);
+	const cancelUrl = `${appUrl}/schedule/cancel/${result.booking.cancel_token}`;
+	
+	await sendBookingConfirmation({
+		guestEmail: email,
+		guestName: name,
+		eventType: result.event.name,
+		startTime,
+		endTime: endTime.toISOString(),
+		cancelUrl,
+		ownerName: owner
 	});
 
 	// Generate prep dossier

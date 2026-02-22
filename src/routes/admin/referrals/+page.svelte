@@ -134,17 +134,7 @@
 	<title>Referrals — Admin</title>
 </svelte:head>
 
-<div class="min-h-screen bg-gray-50">
-	<!-- Nav -->
-	<nav class="bg-white border-b border-gray-200">
-		<div class="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
-			<div class="flex items-center gap-3">
-				<a href="/admin" class="text-sm text-gray-400 hover:text-gray-600">← Admin</a>
-				<span class="text-gray-200">|</span>
-				<h1 class="text-sm font-semibold text-gray-900">Referrals</h1>
-			</div>
-		</div>
-	</nav>
+
 
 	<div class="max-w-5xl mx-auto px-6 py-8">
 		{#if loading}
@@ -317,4 +307,3 @@
 			</div>
 		{/if}
 	</div>
-</div>

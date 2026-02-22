@@ -109,16 +109,7 @@
 
 <svelte:head><title>Bookings — Admin</title></svelte:head>
 
-<div class="min-h-screen bg-gray-50">
-	<nav class="bg-white border-b border-gray-200">
-		<div class="max-w-5xl mx-auto px-6 py-3 flex items-center gap-3">
-			<a href="/admin" class="text-sm text-gray-400 hover:text-gray-600">← Admin</a>
-			<span class="text-gray-200">|</span>
-			<h1 class="text-sm font-semibold text-gray-900">Scheduling</h1>
-		</div>
-	</nav>
-
-	<div class="max-w-5xl mx-auto px-6 py-8">
+<div class="max-w-5xl mx-auto px-6 py-8">
 		<!-- Tabs -->
 		<div class="flex gap-1 mb-6 bg-white rounded-lg border border-gray-200 p-1 w-fit">
 			{#each ['upcoming', 'event_types', 'availability'] as tab}
@@ -265,4 +256,3 @@
 			</div>
 		{/if}
 	</div>
-</div>
