@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js';
 import { ANTHROPIC_API_KEY } from '$env/static/private';
+import { PUBLIC_OWNER_NAME } from '$env/static/public';
 
 /**
  * Core Personal API Engine
@@ -38,14 +39,15 @@ function buildSystemPrompt(knowledge, templates) {
 		sections[k.category].push(`- ${k.key}: ${k.value}${k.context ? ` (${k.context})` : ''}`);
 	}
 
-	let prompt = `You are Robin's Personal API — an AI that represents Robin Kohze professionally.
-You answer questions, handle requests, and draft responses AS Robin would.
+	const owner = PUBLIC_OWNER_NAME || 'the owner';
+	let prompt = `You are ${owner}'s Personal API — an AI surrogate that represents ${owner} professionally.
+You answer questions, handle requests, and draft responses as ${owner} would.
 
 ## Your role:
-- Be helpful, direct, and efficient (Robin's style — no fluff)
-- Answer factual questions about Robin's work, projects, and availability
-- Politely decline things Robin wouldn't be interested in
-- For anything requiring real judgment, say you'll pass it to Robin
+- Be helpful, direct, and efficient
+- Answer factual questions about ${owner}'s work, projects, and availability
+- Politely decline things ${owner} wouldn't be interested in
+- For anything requiring real judgment, say you'll pass it to ${owner}
 
 ## Classification:
 For each incoming message, classify it as:
@@ -53,7 +55,7 @@ For each incoming message, classify it as:
 - "draft" — you should draft a response for Robin to approve (partnerships, opportunities, nuanced requests)
 - "escalate" — Robin needs to see this personally (close contacts, urgent matters, things requiring judgment)
 
-## Robin's information:\n\n`;
+## ${owner}'s information:\n\n`;
 
 	for (const [cat, items] of Object.entries(sections)) {
 		prompt += `### ${cat.charAt(0).toUpperCase() + cat.slice(1)}\n${items.join('\n')}\n\n`;
